@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <!-- 加入 user-scalable=no 防止觸控白板快速連點加分時網頁突然放大 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>分組課堂點名與加分系統 (精簡儲存版)</title>
+    <!-- Tailwind CSS 快速佈局 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 避免觸控大螢幕點擊時出現藍色選取方塊與雙擊放大 behavior */
+        * {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .touch-active:active {
+            transform: scale(0.95);
+            opacity: 0.85;
+        }
+        /* 雙視窗 / 窄螢幕高度適應：卡片緊湊化 */
+        @container (max-width: 720px) {
+            .compact-grid {
+                display: grid !important;
+                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+                gap: 0.4rem !important;
+            }
+            .compact-card {
+                padding: 0.4rem 0.5rem !important;
+                flex-direction: column !important;
+                align-items: stretch !important;
+            }
+            .compact-btn {
+                padding: 0.25rem 0.4rem !important;
+                font-size: 0.75rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans h-screen flex flex-col overflow-hidden text-slate-800 select-none">
+
+    <!-- 頂部標題列與儲存按鈕區 -->
+    <header class="bg-indigo-600 text-white shadow-md flex-shrink-0">
+        <div class="max-w-7xl mx-auto px-4 py-2 flex justify-between items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div class="flex items-center space-x-2">
+                <i data-lucide="award" class="w-6 h-6"></i>
+                <div>
+                    <h1 class="text-base font-bold">分組課堂點名與加分系統</h1>
+                </div>
+            </div>
+            
+            <!-- 日期選擇器與儲存當節按鈕 -->
+            <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                <div class="flex items-center bg-indigo-700 rounded-lg px-2 py-1 border border-indigo-500">
+                    <i data-lucide="calendar" class="w-4 h-4 mr-1 text-indigo-200"></i>
+                    <input type="date" id="record-date" onchange="changeDate()" class="bg-transparent text-white text-xs outline-none cursor-pointer font-bold">
+                </div>
+
+                <!-- 僅保留「儲存當節」按鈕 -->
+                <button onclick="saveCurrentState()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded-lg transition shadow flex items-center gap-1 touch-active font-bold">
+                    <i data-lucide="save" class="w-3.5 h-3.5"></i> 儲存當節
+                </button>
+
+                <!-- 重置數據按鈕 -->
+                <button onclick="resetCurrentGroup()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-2.5 py-1 rounded-lg transition shadow touch-active font-bold">
+                    重置
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-3 py-2 space-y-2 flex-1 flex flex-col min-h-0 w-full">
+
+        <!-- 組別切換 Tab 與功能按鈕區 -->
+        <div class="flex justify-between items-center border-b border-slate-200 pb-1.5 flex-shrink-0 gap-2 overflow-x-auto">
+            <div class="flex space-x-1.5 shrink-0" id="group-tabs">
+                <!-- 動態生成組別頁籤 -->
+            </div>
+            
+            <div class="flex items-center gap-1.5 shrink-0">
+                <button onclick="openDutyModal()" class="bg-rose-500 hover:bg-rose-600 text-white font-bold px-2.5 py-1 rounded-lg text-xs transition shadow flex items-center gap-1 touch-active">
+                    <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> 值日生
+                </button>
+                <button onclick="openSpeechModal()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-2.5 py-1 rounded-lg text-xs transition shadow flex items-center gap-1 touch-active">
+                    <i data-lucide="message-square" class="w-3.5 h-3.5"></i> 好話提醒
+                </button>
+                <button onclick="openRandomPickerModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2.5 py-1 rounded-lg text-xs transition shadow flex items-center gap-1 touch-active">
+                    <i data-lucide="shuffle" class="w-3.5 h-3.5"></i> 抽籤
+                </button>
+                <!-- 出缺席隱藏按鈕 -->
+                <button onclick="toggleAttendancePanel()" id="attendance-toggle-btn" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs px-2.5 py-1 rounded-lg transition font-bold flex items-center gap-1 touch-active">
+                    <i data-lucide="chevron-up" id="toggle-icon" class="w-3.5 h-3.5"></i>
+                    <span id="toggle-text">隱藏點名區</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 可點選隱藏的出缺席紀錄與新增成員面板 -->
+        <div id="attendance-panel" class="transition-all duration-300 overflow-hidden flex-shrink-0">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <!-- 新增學生 -->
+                <div class="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 col-span-1">
+                    <h2 class="text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                        <i data-lucide="user-plus" class="text-indigo-600 w-3.5 h-3.5"></i> 新增成員至 <span id="current-group-label" class="text-indigo-600"></span>
+                    </h2>
+                    <form onsubmit="addStudent(event)" class="flex gap-1.5">
+                        <input type="text" id="student-name" placeholder="輸入姓名" required class="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <button type="submit" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-2.5 py-1 rounded-lg text-xs transition touch-active">
+                            新增
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 出勤與數據統計面板 -->
+                <div class="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 col-span-2 flex justify-between items-center">
+                    <div class="grid grid-cols-3 gap-2 flex-1 text-center border-r border-slate-100 pr-3">
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-semibold block">本組人數</span>
+                            <span id="total-count" class="text-lg font-extrabold text-slate-700">0</span>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-emerald-500 font-semibold block">準時出席 (+2分)</span>
+                            <span id="on-time-count" class="text-lg font-extrabold text-emerald-600">0</span>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-amber-500 font-semibold block">遲到人數</span>
+                            <span id="late-count" class="text-lg font-extrabold text-amber-600">0</span>
+                        </div>
+                    </div>
+                    <!-- 批次點名操作 -->
+                    <div class="pl-3 flex flex-col gap-1">
+                        <div class="flex gap-1">
+                            <button onclick="batchAttendance('準時')" class="bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-semibold px-2 py-0.5 rounded-md text-xs transition whitespace-nowrap touch-active">
+                                全選準時
+                            </button>
+                            <button onclick="batchAttendance('遲到')" class="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-semibold px-2 py-0.5 rounded-md text-xs transition whitespace-nowrap touch-active">
+                                全選遲到
+                            </button>
+                        </div>
+                        <button onclick="batchAttendance('未標記')" class="bg-slate-100 text-slate-600 hover:bg-slate-200 font-semibold px-2.5 py-1 rounded-md text-xs transition whitespace-nowrap touch-active">
+                            重置狀態
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 學生點名與加分看板 -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0 [@container]:[container-type:inline-size]">
+            <div class="px-3 py-2 border-b border-slate-100 flex justify-between items-center gap-2 shrink-0">
+                <h2 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <i data-lucide="users" class="text-indigo-600 w-4 h-4"></i> <span id="group-title"></span> 學生名單與紀錄
+                </h2>
+                <!-- 總積分隱藏切換按鈕 -->
+                <button onclick="toggleTotalScoreHide()" id="score-toggle-btn" class="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 px-2 py-0.5 rounded-md transition flex items-center gap-1 touch-active">
+                    <i data-lucide="eye-off" id="score-toggle-icon" class="w-3.5 h-3.5"></i>
+                    <span id="score-toggle-text">隱藏總積分</span>
+                </button>
+            </div>
+
+            <!-- 學生網格 -->
+            <div class="p-2 overflow-y-auto flex-1 min-h-0">
+                <div id="student-grid-container" class="compact-grid flex flex-col gap-1.5">
+                    <!-- 資料動態渲染區 -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 1. 未帶學用品值日生 Modal -->
+    <div id="duty-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3 border border-slate-100">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h3 class="font-bold text-rose-600 flex items-center gap-1.5 text-base">
+                    <i data-lucide="alert-circle" class="w-5 h-5"></i> 未帶學用品值日生 (<span id="modal-duty-group-name"></span>)
+                </h3>
+                <button onclick="closeDutyModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500">點擊學生標籤即可切換/取消值日生標記：</p>
+            <div id="duty-student-tags" class="flex flex-wrap gap-2 py-1 max-h-60 overflow-y-auto"></div>
+            <div class="pt-2 text-right">
+                <button onclick="closeDutyModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition touch-active">
+                    完成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 口說好話 (提醒) Modal -->
+    <div id="speech-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3 border border-slate-100">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h3 class="font-bold text-teal-600 flex items-center gap-1.5 text-base">
+                    <i data-lucide="message-square" class="w-5 h-5"></i> 口說好話 - 課堂提醒 (<span id="modal-speech-group-name"></span>)
+                </h3>
+                <button onclick="closeSpeechModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500">點擊【⚠️ 提醒】增加紀錄；點擊【-1】可進行復原：</p>
+            <div id="speech-student-list" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
+            <div class="pt-2 text-right">
+                <button onclick="closeSpeechModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition touch-active">
+                    完成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 隨機抽籤 Modal -->
+    <div id="picker-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 text-center space-y-4 border border-slate-100">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h3 class="font-bold text-slate-700 text-sm flex items-center gap-1.5">
+                    <i data-lucide="sparkles" class="text-amber-500 w-4 h-4"></i> 隨機選人 (<span id="modal-group-name"></span>)
+                </h3>
+                <button onclick="closeRandomPickerModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="py-6 bg-slate-50 rounded-xl border border-slate-200">
+                <div id="picker-result" class="text-3xl font-black text-indigo-600 tracking-wider">
+                    點擊開始
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button id="start-pick-btn" onclick="startRandomPick()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 rounded-xl text-xs transition shadow touch-active">
+                    🎲 開始抽籤
+                </button>
+                <button onclick="closeRandomPickerModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold px-3 py-2 rounded-xl text-xs transition touch-active">
+                    關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const defaultGroups = {
+            "數學9A": ["慶豐", "詠甯", "祺叡", "冠閔", "鴻昱", "聖民", "柏曜"],
+            "國文8A": ["淮喆", "鼎杰", "佳瑋", "子田", "司浩"],
+            "國文8B": ["昱佑", "奕訢", "日良", "羽琪", "世賢", "宣澔"]
+        };
+
+        let currentGroup = "數學9A";
+        let currentDate = new Date().toLocaleDateString('sv');
+        let isPanelCollapsed = false;
+        let isTotalScoreHidden = false;
+
+        let db = JSON.parse(localStorage.getItem('class_attendance_db')) || {};
+        document.getElementById('record-date').value = currentDate;
+
+        function getRecords(date, group) {
+            if (!db[date]) db[date] = {};
+            if (!db[date][group]) {
+                const studentList = defaultGroups[group] || [];
+                db[date][group] = studentList.map(name => ({
+                    id: name + "_" + Math.random().toString(36).substr(2, 4),
+                    name: name,
+                    bonusScore: 0,
+                    attendance: "未標記",
+                    isDuty: false,
+                    warnCount: 0
+                }));
+            }
+            return db[date][group];
+        }
+
+        function saveData() {
+            localStorage.setItem('class_attendance_db', JSON.stringify(db));
+            renderUI();
+        }
+
+        /* 儲存當節內容功能 */
+        function saveCurrentState() {
+            localStorage.setItem('class_attendance_snapshot', JSON.stringify(db));
+            alert(`已成功儲存【${currentDate} - ${currentGroup}】當節內容！`);
+        }
+
+        function changeDate() {
+            currentDate = document.getElementById('record-date').value;
+            renderUI();
+        }
+
+        function switchGroup(group) {
+            currentGroup = group;
+            renderUI();
+        }
+
+        function toggleAttendancePanel() {
+            const panel = document.getElementById('attendance-panel');
+            const toggleText = document.getElementById('toggle-text');
+            const toggleIcon = document.getElementById('toggle-icon');
+
+            isPanelCollapsed = !isPanelCollapsed;
+
+            if (isPanelCollapsed) {
+                panel.style.maxHeight = '0px';
+                panel.style.opacity = '0';
+                panel.style.margin = '0px';
+                toggleText.innerText = '顯示點名區';
+                toggleIcon.setAttribute('data-lucide', 'chevron-down');
+            } else {
+                panel.style.maxHeight = '300px';
+                panel.style.opacity = '1';
+                panel.style.marginBottom = '';
+                toggleText.innerText = '隱藏點名區';
+                toggleIcon.setAttribute('data-lucide', 'chevron-up');
+            }
+            lucide.createIcons();
+        }
+
+        function toggleTotalScoreHide() {
+            isTotalScoreHidden = !isTotalScoreHidden;
+            const btnText = document.getElementById('score-toggle-text');
+            const btnIcon = document.getElementById('score-toggle-icon');
+
+            if (isTotalScoreHidden) {
+                btnText.innerText = '顯示總積分';
+                btnIcon.setAttribute('data-lucide', 'eye');
+            } else {
+                btnText.innerText = '隱藏總積分';
+                btnIcon.setAttribute('data-lucide', 'eye-off');
+            }
+            renderUI();
+        }
+
+        function calculateDailyScore(student) {
+            let attendanceScore = (student.attendance === '準時') ? 2 : 0;
+            return student.bonusScore + attendanceScore;
+        }
+
+        function calculateCumulativeScore(studentName, group) {
+            let cumulativeScore = 0;
+            Object.keys(db).forEach(date => {
+                if (db[date] && db[date][group]) {
+                    const studentRecord = db[date][group].find(s => s.name === studentName);
+                    if (studentRecord) {
+                        cumulativeScore += calculateDailyScore(studentRecord);
+                    }
+                }
+            });
+            return cumulativeScore;
+        }
+
+        function toggleDuty(index) {
+            const students = getRecords(currentDate, currentGroup);
+            students[index].isDuty = !students[index].isDuty;
+            saveData();
+        }
+
+        function updateWarnCount(index, delta) {
+            const students = getRecords(currentDate, currentGroup);
+            students[index].warnCount = Math.max(0, (students[index].warnCount || 0) + delta);
+            saveData();
+        }
+
+        function openDutyModal() {
+            document.getElementById('modal-duty-group-name').innerText = currentGroup;
+            document.getElementById('duty-modal').classList.remove('hidden');
+        }
+        function closeDutyModal() {
+            document.getElementById('duty-modal').classList.add('hidden');
+        }
+
+        function openSpeechModal() {
+            document.getElementById('modal-speech-group-name').innerText = currentGroup;
+            document.getElementById('speech-modal').classList.remove('hidden');
+        }
+        function closeSpeechModal() {
+            document.getElementById('speech-modal').classList.add('hidden');
+        }
+
+        function renderUI() {
+            const groupTabs = document.getElementById('group-tabs');
+            groupTabs.innerHTML = Object.keys(defaultGroups).map(group => `
+                <button onclick="switchGroup('${group}')" class="px-3 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap touch-active ${currentGroup === group ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-200'}">
+                    ${group}
+                </button>
+            `).join('');
+
+            document.getElementById('current-group-label').innerText = currentGroup;
+            document.getElementById('group-title').innerText = currentGroup;
+
+            const students = getRecords(currentDate, currentGroup);
+            const container = document.getElementById('student-grid-container');
+            container.innerHTML = '';
+
+            let onTime = 0;
+            let late = 0;
+
+            students.forEach((s, index) => {
+                if (s.attendance === '準時') onTime++;
+                if (s.attendance === '遲到') late++;
+
+                const dailyScore = calculateDailyScore(s);
+                const totalCumulativeScore = calculateCumulativeScore(s.name, currentGroup);
+
+                const card = document.createElement('div');
+                card.className = "compact-card bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 rounded-lg p-2 flex items-center justify-between transition gap-1.5";
+                card.innerHTML = `
+                    <div class="flex items-center gap-1.5 justify-between w-full sm:w-auto">
+                        <div class="flex items-center gap-1">
+                            <span class="font-bold text-slate-800 text-xs whitespace-nowrap">${s.name}</span>
+                            ${s.isDuty ? '<span class="bg-rose-100 text-rose-600 text-[10px] px-1 rounded border border-rose-200">值日生</span>' : ''}
+                            ${(s.warnCount || 0) > 0 ? `<span class="bg-amber-100 text-amber-700 text-[10px] px-1 rounded border border-amber-200">⚠️x${s.warnCount}</span>` : ''}
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded">本日 +${dailyScore}</span>
+                            <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded">
+                                總計 ${isTotalScoreHidden ? '***' : '+' + totalCumulativeScore}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 justify-end">
+                        <button onclick="addBonus(${index}, 1)" class="compact-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-0.5 rounded text-xs transition touch-active">
+                            +1
+                        </button>
+                        <button onclick="addBonus(${index}, 2)" class="compact-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded text-xs transition touch-active">
+                            +2
+                        </button>
+                        <button onclick="addBonus(${index}, -1)" title="扣 1 分" class="compact-btn bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-600 font-bold px-1.5 py-0.5 rounded text-xs transition touch-active">
+                            -1
+                        </button>
+                        <button onclick="setAttendance(${index}, '準時')" class="compact-btn border text-xs px-2 py-0.5 rounded font-bold transition touch-active ${s.attendance === '準時' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-300 hover:bg-emerald-50'}">
+                            準時
+                        </button>
+                        <button onclick="setAttendance(${index}, '遲到')" class="compact-btn border text-xs px-2 py-0.5 rounded font-bold transition touch-active ${s.attendance === '遲到' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-500 border-slate-300 hover:bg-amber-50'}">
+                            遲到
+                        </button>
+                        <button onclick="removeStudent(${index})" class="text-slate-300 hover:text-rose-500 transition p-0.5 ml-0.5 touch-active">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            document.getElementById('duty-student-tags').innerHTML = students.map((s, index) => `
+                <button onclick="toggleDuty(${index})" class="px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1 touch-active ${s.isDuty ? 'bg-rose-500 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                    ${s.isDuty ? '⚠️' : ''} ${s.name}
+                </button>
+            `).join('');
+
+            document.getElementById('speech-student-list').innerHTML = students.map((s, index) => `
+                <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                    <span class="font-bold text-slate-700">${s.name}</span>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="updateWarnCount(${index}, 1)" class="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-2.5 py-1 rounded-lg transition border border-amber-300 touch-active">
+                            ⚠️ 提醒 (${s.warnCount || 0})
+                        </button>
+                        <button onclick="updateWarnCount(${index}, -1)" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2 py-1 rounded-lg transition touch-active">
+                            -1
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('total-count').innerText = students.length;
+            document.getElementById('on-time-count').innerText = onTime;
+            document.getElementById('late-count').innerText = late;
+
+            lucide.createIcons();
+        }
+
+        function setAttendance(index, status) {
+            const students = getRecords(currentDate, currentGroup);
+            students[index].attendance = students[index].attendance === status ? '未標記' : status;
+            saveData();
+        }
+
+        function addBonus(index, points) {
+            const students = getRecords(currentDate, currentGroup);
+            students[index].bonusScore += points;
+            saveData();
+        }
+
+        function openRandomPickerModal() {
+            document.getElementById('modal-group-name').innerText = currentGroup;
+            document.getElementById('picker-result').innerText = "點擊開始";
+            document.getElementById('picker-modal').classList.remove('hidden');
+        }
+
+        function closeRandomPickerModal() {
+            document.getElementById('picker-modal').classList.add('hidden');
+        }
+
+        function startRandomPick() {
+            const students = getRecords(currentDate, currentGroup);
+            if (students.length === 0) {
+                alert("當前組別無學生！");
+                return;
+            }
+
+            const resultDiv = document.getElementById('picker-result');
+            const btn = document.getElementById('start-pick-btn');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+
+            let counter = 0;
+            const totalRolls = 15;
+            const interval = setInterval(() => {
+                const randomIndex = Math.floor(Math.random() * students.length);
+                resultDiv.innerText = students[randomIndex].name;
+                counter++;
+
+                if (counter >= totalRolls) {
+                    clearInterval(interval);
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            }, 80);
+        }
+
+        function addStudent(e) {
+            e.preventDefault();
+            const input = document.getElementById('student-name');
+            const name = input.value.trim();
+            if (name) {
+                const students = getRecords(currentDate, currentGroup);
+                students.push({
+                    id: name + "_" + Date.now(),
+                    name: name,
+                    bonusScore: 0,
+                    attendance: "未標記",
+                    isDuty: false,
+                    warnCount: 0
+                });
+                input.value = '';
+                saveData();
+            }
+        }
+
+        function removeStudent(index) {
+            const students = getRecords(currentDate, currentGroup);
+            if (confirm(`確定移除「${students[index].name}」嗎？`)) {
+                students.splice(index, 1);
+                saveData();
+            }
+        }
+
+        function batchAttendance(status) {
+            const students = getRecords(currentDate, currentGroup);
+            students.forEach(s => s.attendance = status);
+            saveData();
+        }
+
+        function resetCurrentGroup() {
+            if (confirm(`確定要重置 ${currentDate} 【${currentGroup}】數據嗎？`)) {
+                delete db[currentDate][currentGroup];
+                saveData();
+            }
+        }
+
+        renderUI();
+    </script>
+</body>
+</html>
