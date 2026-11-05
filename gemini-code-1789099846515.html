@@ -259,22 +259,54 @@
             }
         }
 
-        // 寫入資料至 Google 試算表
+        // 將寫入工作排隊，避免連續加分時舊資料覆蓋新資料
+        let saveQueue = Promise.resolve();
+
+        // 寫入後重新讀取試算表，確認資料真的保存成功
         async function saveData() {
             renderUI();
             updateStatus('syncing');
-            try {
-                await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(db)
-                });
-                updateStatus('success');
-            } catch (err) {
-                console.error("儲存失敗:", err);
-                updateStatus('error');
-            }
+
+            const snapshot = JSON.stringify(db);
+
+            saveQueue = saveQueue.then(async () => {
+                try {
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                        body: snapshot
+                    });
+
+                    // no-cors 無法讀取 POST 回應，因此以 GET 確認試算表內容
+                    let verified = false;
+                    for (let attempt = 0; attempt < 8; attempt++) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        const response = await fetch(GOOGLE_SCRIPT_URL, { cache: 'no-store' });
+                        const savedData = await response.json();
+
+                        if (savedData && savedData.status === 'error') {
+                            throw new Error(savedData.message || '試算表回報寫入錯誤');
+                        }
+
+                        if (JSON.stringify(savedData || {}) === snapshot) {
+                            verified = true;
+                            break;
+                        }
+                    }
+
+                    if (!verified) {
+                        throw new Error('尚未在試算表讀回本次更新，請稍後按「重新載入」確認，暫勿重複加分');
+                    }
+
+                    updateStatus('success');
+                } catch (err) {
+                    console.error("儲存或驗證失敗:", err);
+                    updateStatus('error');
+                }
+            });
+
+            return saveQueue;
         }
 
         function getRecords(date, group) {
