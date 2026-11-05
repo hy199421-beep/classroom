@@ -215,7 +215,7 @@
 
     <script>
         // 已帶入您部署的 Google Apps Script 網址
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyLulBpo2oKuyfwbhmkGrtvivaUi-Dl03dzk7k-JLhVSNCGdHB7OiUa8X1C40op1vjt/exec";
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby4hyOeWPXPvbqPCgr-xcuzR_nRw3K0z2Ao17sz7EsaWRbVbF3Dephdl-4r7EdT-Sva/exec";
 
         const defaultGroups = {
             "數學9A": ["慶豐", "詠甯", "祺叡", "冠閔", "鴻昱", "聖民", "柏曜"],
@@ -304,40 +304,72 @@
                     if (!latestResponse.ok) throw new Error('無法取得最新積分，已停止寫入');
                     const latest = await latestResponse.json();
                     if (!latest || typeof latest !== 'object' || Array.isArray(latest) || latest.status === 'error') {
-                        throw new Error('試算表回傳資料格式錯誤，已停止寫入');
+                        throw new Error(latest && latest.message ? latest.message : '試算表回傳資料格式錯誤，已停止寫入');
                     }
 
-                    const merged = mergeLocalChanges(latest, baseSnapshot, localSnapshot);
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                        body: JSON.stringify(merged)
+                    const changed = [];
+                    const dates = new Set([...Object.keys(baseSnapshot), ...Object.keys(localSnapshot)]);
+                    dates.forEach(date => {
+                        if (date.startsWith('__')) return;
+                        const beforeDay = baseSnapshot[date] || {};
+                        const afterDay = localSnapshot[date] || {};
+                        const groups = new Set([...Object.keys(beforeDay), ...Object.keys(afterDay)]);
+                        groups.forEach(group => {
+                            if (!sameData(beforeDay[group], afterDay[group])) {
+                                if (!Array.isArray(afterDay[group])) {
+                                    throw new Error('偵測到不完整的組別資料，為保護歷史積分已停止寫入');
+                                }
+                                changed.push({ date, group, records: cloneData(afterDay[group]) });
+                            }
+                        });
                     });
 
+                    if (changed.length === 0) {
+                        db = latest;
+                        lastSyncedDb = cloneData(latest);
+                        updateStatus('success');
+                        renderUI();
+                        return;
+                    }
+
+                    // 逐日期、逐組別寫入，避免覆蓋其他組別及商店兌換紀錄。
+                    for (const item of changed) {
+                        if (!defaultGroups[item.group]) {
+                            throw new Error('不允許寫入的組別：' + item.group);
+                        }
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                            body: JSON.stringify({
+                                action: 'saveGroup',
+                                date: item.date,
+                                group: item.group,
+                                records: item.records
+                            })
+                        });
+                    }
+
                     let verifiedData = null;
-                    for (let attempt = 0; attempt < 8; attempt++) {
-                        await new Promise(resolve => setTimeout(resolve, 600));
+                    for (let attempt = 0; attempt < 10; attempt++) {
+                        await new Promise(resolve => setTimeout(resolve, 650));
                         const verifyResponse = await fetch(GOOGLE_SCRIPT_URL, { cache: 'no-store' });
                         if (!verifyResponse.ok) continue;
                         const savedData = await verifyResponse.json();
-                        if (!savedData || savedData.status === 'error') continue;
+                        if (!savedData || typeof savedData !== 'object' || savedData.status === 'error') continue;
 
-                        let matches = true;
-                        const dates = new Set([...Object.keys(baseSnapshot), ...Object.keys(localSnapshot)]);
-                        for (const date of dates) {
-                            if (date.startsWith('__')) continue;
-                            const before = baseSnapshot[date] || {};
-                            const after = localSnapshot[date] || {};
-                            const groups = new Set([...Object.keys(before), ...Object.keys(after)]);
-                            for (const group of groups) {
-                                if (!sameData(before[group], after[group]) &&
-                                    !sameData((savedData[date] || {})[group], (merged[date] || {})[group])) matches = false;
-                            }
+                        const allMatched = changed.every(item =>
+                            sameData((savedData[item.date] || {})[item.group], item.records)
+                        );
+                        if (allMatched) {
+                            verifiedData = savedData;
+                            break;
                         }
-                        if (matches) { verifiedData = savedData; break; }
                     }
-                    if (!verifiedData) throw new Error('尚未從試算表確認本次變更，請重新載入核對，勿重複加分');
+
+                    if (!verifiedData) {
+                        throw new Error('尚未從試算表確認本次變更。請先重新載入核對，不要重複加分');
+                    }
 
                     db = verifiedData;
                     lastSyncedDb = cloneData(verifiedData);
@@ -346,6 +378,7 @@
                 } catch (err) {
                     console.error("儲存或驗證失敗:", err);
                     updateStatus('error');
+                    alert('同步失敗：' + (err && err.message ? err.message : '未知錯誤') + '\\n請重新載入確認資料，避免重複加分。');
                 }
             });
             return saveQueue;
