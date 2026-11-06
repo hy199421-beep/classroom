@@ -260,6 +260,7 @@
                 if (!data || typeof data !== 'object' || Array.isArray(data) || data.status === 'error') {
                     throw new Error(data && data.message ? data.message : '試算表資料格式不正確');
                 }
+                if (data.__apiVersion !== 2) throw new Error('積分 API 尚未升級。請先更新並重新部署 Apps Script，為保護歷史資料已暫停寫入。');
                 db = data;
                 lastSyncedDb = cloneData(db);
                 updateStatus('success');
@@ -307,6 +308,7 @@
                     if (!latest || typeof latest !== 'object' || Array.isArray(latest) || latest.status === 'error') {
                         throw new Error(latest && latest.message ? latest.message : '試算表回傳資料格式錯誤，已停止寫入');
                     }
+                    if (latest.__apiVersion !== 2) throw new Error('積分 API 尚未升級，已停止寫入以保護歷史資料。');
 
                     const changed = [];
                     const dates = new Set([...Object.keys(baseSnapshot), ...Object.keys(localSnapshot)]);
@@ -357,7 +359,7 @@
                         const verifyResponse = await fetch(GOOGLE_SCRIPT_URL, { cache: 'no-store' });
                         if (!verifyResponse.ok) continue;
                         const savedData = await verifyResponse.json();
-                        if (!savedData || typeof savedData !== 'object' || savedData.status === 'error') continue;
+                        if (!savedData || typeof savedData !== 'object' || savedData.status === 'error' || savedData.__apiVersion !== 2) continue;
 
                         const allMatched = changed.every(item =>
                             sameData((savedData[item.date] || {})[item.group], item.records)
