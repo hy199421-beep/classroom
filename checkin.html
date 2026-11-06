@@ -73,10 +73,11 @@ function ensureRecords(data,x,date){if(!data[date])data[date]={};if(!Array.isArr
 async function saveGroup(date,group,records){await fetch(API,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({action:"saveGroup",date,group,records})})}
 async function signIn(name){
  if(busy||!selected)return;
- const date=dateInput.value,lesson=selected,now=new Date(),minutes=now.getHours()*60+now.getMinutes();
+ const date=dateInput.value,lesson=selected,now=new Date();
+ const startAt=atTime(date,lesson.start),endAt=atTime(date,lesson.end);
  if(date!==todayISO()){showStatus("只能在課程當天進行學生簽到。","error");return}
- if(minutes<parseTime(lesson.start)){showStatus("尚未到上課時間，請上課開始後再簽到。","warn");return}
- if(minutes>parseTime(lesson.end)){showStatus("本節課已結束，請聯絡老師補登。","error");return}
+ if(now<startAt){showStatus("尚未到上課時間，請上課開始後再簽到。","warn");return}
+ if(now>endAt){showStatus("本節課已結束，請聯絡老師補登。","error");return}
  busy=true;renderRoster();showStatus("正在確認並寫入簽到紀錄……");
  const group=lesson.group,id=lessonId(lesson),time=now.toLocaleTimeString("zh-TW",{hour12:false});
  try{
