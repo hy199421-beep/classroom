@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#75b9d1"><title>學習島｜智慧簽到</title>
+<style>
+:root{--ink:#493523;--blue:#477c9c;--cream:#fff8e9;--gold:#d6ad65;--green:#4c9660}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(180deg,#bfe8f2,#eaf3d8 45%,#f7edcf);font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;color:var(--ink);padding:18px}
+.wrap{max-width:900px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.link{background:#fff8e9;border:2px solid #d8bd8d;border-radius:12px;padding:9px 13px;color:#674b30;text-decoration:none;font-weight:900}
+header{text-align:center;padding:20px 10px 12px}header .island{font-size:48px}h1{margin:4px 0;color:#76502d;font-size:clamp(27px,5vw,38px)}header p{margin:5px;color:#6e7656}
+.panel{background:#fffaf0;border:3px solid #e5c98f;border-radius:22px;padding:18px;margin:14px 0;box-shadow:0 6px 0 #d6bd8c}
+.row{display:flex;gap:12px;flex-wrap:wrap}.field{flex:1;min-width:190px}label{display:block;font-weight:900;margin:0 0 7px}select{width:100%;padding:12px;border:2px solid #ddc89e;border-radius:12px;background:white;color:#4b3a2b;font:inherit}
+.session{background:#edf7fa;border:2px solid #b8d9e5;border-radius:16px;padding:14px;margin-top:12px}.session h2{margin:0 0 5px;color:#315f7a}.muted{color:#7b705e;font-size:13px}.clock{font-size:30px;font-weight:1000;color:#315f7a;font-variant-numeric:tabular-nums}
+.roster{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:14px}.student{border:2px solid #d9c49a;border-radius:15px;background:#fff;padding:16px 10px;font:inherit;font-weight:900;color:#60452e;box-shadow:0 4px 0 #dfcba5;min-height:70px}.student:disabled{opacity:.75;cursor:default}.student.done{background:#e1f3e2;border-color:#83bd8b;color:#28633a}.student.late{background:#fff0d9;border-color:#e7bb69;color:#8b5a13}.student.absent{background:#f4e5e2;border-color:#d5a49a;color:#934b3e}
+.notice{padding:12px 14px;border-radius:12px;background:#f3eddd;margin-top:12px;font-weight:800;line-height:1.6}.status{min-height:26px;margin-top:10px;font-weight:900}.ok{color:#2c7b43}.warn{color:#9a641b}.error{color:#ad3f36}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-top:10px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+button{cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #579ac0;outline-offset:2px}
+@media(max-width:560px){body{padding:10px}.panel{padding:13px}.student{min-height:62px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+ <div class="top"><a class="link" href="https://hy199421-beep.github.io/learning-island/">← 返回學習島</a><a class="link" href="./points-v2.html">📊 教師積分管理</a></div>
+ <header><div class="island">🏝️⏰</div><h1>智慧簽到與獎勵中心</h1><p>每堂課準時簽到，獲得 2 顆學習星星！</p></header>
+ <section class="panel">
+  <div class="row">
+   <div class="field"><label for="lesson">今天的課程</label><select id="lesson"></select></div>
+   <div class="field"><label for="date">簽到日期</label><input id="date" type="date" style="width:100%;padding:12px;border:2px solid #ddc89e;border-radius:12px;font:inherit"></div>
+  </div>
+  <div class="session">
+   <h2 id="session-title">正在確認課程……</h2>
+   <div class="clock" id="clock">--:--:--</div>
+   <div class="muted" id="session-time"></div>
+   <div class="notice" id="rule">上課開始後 5 分鐘內簽到：準時 +2 分；超過 5 分鐘：遲到 +0 分；課程結束仍未簽到：未到。</div>
+  </div>
+  <div class="status" id="status" aria-live="polite">正在讀取學生與積分資料……</div>
+ </section>
+ <section class="panel">
+  <h2 style="margin:0">👋 請點選自己的姓名簽到</h2>
+  <p class="muted" id="roster-hint">每位學生每堂課只能簽到一次。</p>
+  <div id="roster" class="roster"></div>
+  <div class="legend"><span><i class="dot" style="background:#4c9660"></i>準時 +2</span><span><i class="dot" style="background:#d99a35"></i>遲到 +0</span><span><i class="dot" style="background:#b96a5e"></i>未到 +0</span></div>
+ </section>
+</main>
+<script>
+const API="https://script.google.com/macros/s/AKfycby4hyOeWPXPvbqPCgr-xcuzR_nRw3K0z2Ao17sz7EsaWRbVbF3Dephdl-4r7EdT-Sva/exec";
+const groups={
+ "數學9A":["慶豐","詠甯","祺叡","冠閔","鴻昱","聖民","柏曜"],
+ "國文8A":["淮喆","鼎杰","佳瑋","子田","司浩"],
+ "國文8B":["昱佑","奕訢","日良","羽琪","世賢","宣澔"]
+};
+const timetable={
+ 1:[["數學9A",1,"08:15","09:00"],["國文8A",2,"09:10","09:55"],["國文8B",7,"15:05","15:50"]],
+ 2:[["數學9A",3,"10:05","10:50"],["國文8B",4,"11:00","11:45"],["國文8A",7,"15:05","15:50"]],
+ 3:[["國文8A",1,"08:15","09:00"],["國文8B",3,"10:05","10:50"],["國文8A",5,"13:15","14:00","間接服務"],["國文8A",6,"14:10","14:55","社會技巧"]],
+ 4:[["數學9A",3,"10:05","10:50"],["國文8A",5,"13:15","14:00"],["國文8B",6,"14:10","14:55"]],
+ 5:[["國文8B",1,"08:15","09:00"],["數學9A",2,"09:10","09:55"],["國文8A",3,"10:05","10:50"]]
+};
+const $=id=>document.getElementById(id);
+let db={},baseDb={},busy=false,selected=null,timer=null;
+const todayISO=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")};
+const dateInput=$("date");dateInput.value=todayISO();
+function parseTime(s){const [h,m]=s.split(":").map(Number);return h*60+m}
+function getLessons(date){const d=new Date(date+"T12:00:00");return timetable[d.getDay()]||[]}
+function lessonId(x){return x.group+"-P"+x.period}
+function currentLessonIndex(list){const now=new Date(),m=now.getHours()*60+now.getMinutes();let i=list.findIndex(x=>m>=parseTime(x.start)&&m<=parseTime(x.end));if(i>=0)return i;return Math.max(0,list.findIndex(x=>m<parseTime(x.start)))}
+function buildLessonOptions(){const list=getLessons(dateInput.value);const sel=$("lesson");sel.innerHTML="";list.forEach((a,i)=>{const o=document.createElement("option");o.value=String(i);o.textContent="第"+a.period+"節｜"+(a.label||a.group)+"（"+a.start+"–"+a.end+"）";sel.appendChild(o)});if(!list.length){const o=document.createElement("option");o.textContent="今天沒有排定的課程";o.value="";sel.appendChild(o);sel.disabled=true;selected=null;renderRoster();return}sel.disabled=false;sel.value=String(currentLessonIndex(list));chooseLesson()}
+function chooseLesson(){const list=getLessons(dateInput.value);selected=list[Number($("lesson").value)]||null;renderRoster()}
+function sessionStatus(x,entry){if(entry)return entry.status;const now=new Date(),m=now.getHours()*60+now.getMinutes();if(dateInput.value<todayISO()|| (dateInput.value===todayISO()&&m>parseTime(x.end)))return "未到";return "未簽到"}
+function showStatus(msg,kind=""){const el=$("status");el.textContent=msg;el.className="status "+kind}
+async function readLatest(){const r=await fetch(API,{cache:"no-store"});if(!r.ok)throw Error("讀取試算表失敗");const d=await r.json();if(!d||typeof d!=="object"||Array.isArray(d)||d.status==="error")throw Error(d?.message||"資料格式錯誤");return d}
+function ensureRecords(data,x,date){if(!data[date])data[date]={};if(!Array.isArray(data[date][x.group]))data[date][x.group]=(groups[x.group]||[]).map(name=>({id:name+"_"+Math.random().toString(36).slice(2,6),name,bonusScore:0,attendance:"未標記",isDuty:false,warnCount:0}));return data[date][x.group]}
+async function saveGroup(date,group,records){await fetch(API,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({action:"saveGroup",date,group,records})})}
+async function signIn(name){
+ if(busy||!selected)return;
+ const date=dateInput.value,lesson=selected,now=new Date(),minutes=now.getHours()*60+now.getMinutes();
+ if(date!==todayISO()){showStatus("只能在課程當天進行學生簽到。","error");return}
+ if(minutes<parseTime(lesson.start)){showStatus("尚未到上課時間，請上課開始後再簽到。","warn");return}
+ if(minutes>parseTime(lesson.end)){showStatus("本節課已結束，請聯絡老師補登。","error");return}
+ busy=true;renderRoster();showStatus("正在確認並寫入簽到紀錄……");
+ const group=lesson.group,id=lessonId(lesson),time=now.toLocaleTimeString("zh-TW",{hour12:false});
+ try{
+  const latest=await readLatest(),records=ensureRecords(latest,lesson,date);
+  const rec=records.find(x=>x.name===name);if(!rec)throw Error("找不到學生資料，請聯絡老師");
+  rec.lessonAttendance=rec.lessonAttendance&&typeof rec.lessonAttendance==="object"?rec.lessonAttendance:{};
+  if(rec.lessonAttendance[id])throw Error("這堂課已經簽到，不能重複領取積分");
+  const onTime=minutes<=parseTime(lesson.start)+5;
+  const entry={sessionId:id,period:lesson.period,course:lesson.label||group,status:onTime?"準時":"遲到",time,date};
+  rec.lessonAttendance[id]=entry;
+  await saveGroup(date,group,records);
+  let verified=null;
+  for(let i=0;i<8;i++){await new Promise(r=>setTimeout(r,550));const check=await readLatest();const saved=check[date]?.[group]?.find(x=>x.name===name)?.lessonAttendance?.[id];if(saved&&saved.time===time&&saved.status===entry.status){verified=check;break}}
+  if(!verified)throw Error("尚未確認試算表完成寫入。請先重新整理確認，不要重複簽到。");
+  db=verified;baseDb=JSON.parse(JSON.stringify(verified));
+  showStatus(onTime?"🎉 準時簽到成功！已加 2 分，學習島積分同步更新。":"已完成簽到：本次遲到，不加分。","ok");
+ }catch(e){showStatus("簽到未能確認："+(e.message||"同步失敗")+"。請重新載入核對，勿重複操作。","error")}
+ finally{busy=false;renderRoster()}
+}
+function renderRoster(){
+ const box=$("roster");box.innerHTML="";
+ if(!selected){$("session-title").textContent="今天沒有排定的課程";$("session-time").textContent="請確認日期或課表設定";$("roster-hint").textContent="目前沒有可簽到的課程。";return}
+ const date=dateInput.value,group=selected.group,id=lessonId(selected);
+ $("session-title").textContent=(selected.label||group)+"｜"+selected.group;
+ $("session-time").textContent="第 "+selected.period+" 節　"+selected.start+"–"+selected.end+"　｜　準時截止 "+new Date(date+"T"+selected.start+":00").toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit",hour12:false})+" 後 5 分鐘";
+ $("roster-hint").textContent="每位學生每堂課只能簽到一次；簽到後會自動同步到積分及商店。";
+ (groups[group]||[]).forEach(name=>{
+  const entry=db[date]?.[group]?.find(x=>x.name===name)?.lessonAttendance?.[id];
+  const state=sessionStatus(selected,entry),b=document.createElement("button");b.className="student";
+  if(state==="準時")b.classList.add("done");if(state==="遲到")b.classList.add("late");if(state==="未到")b.classList.add("absent");
+  b.disabled=!!entry||state==="未到"||busy;
+  b.textContent=state==="準時"?"✓ "+name+"｜準時":state==="遲到"?"⏰ "+name+"｜遲到":state==="未到"?name+"｜未到":name+"｜點我簽到";
+  b.addEventListener("click",()=>signIn(name));box.appendChild(b);
+ });
+}
+function tick(){const now=new Date();$("clock").textContent=now.toLocaleTimeString("zh-TW",{hour12:false});if(selected&&dateInput.value===todayISO())renderRoster()}
+$("lesson").addEventListener("change",chooseLesson);
+dateInput.addEventListener("change",()=>{buildLessonOptions();load()});
+async function load(){showStatus("正在讀取學生名單與積分……");try{db=await readLatest();baseDb=JSON.parse(JSON.stringify(db));showStatus("✅ 已連線；準時簽到每堂課 +2 分。","ok");renderRoster()}catch(e){showStatus("⚠️ 無法讀取最新資料，暫停簽到："+e.message,"error")}}
+buildLessonOptions();load();tick();timer=setInterval(tick,1000);
+</script>
+</body></html>
