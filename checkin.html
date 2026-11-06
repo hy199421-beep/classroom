@@ -57,16 +57,16 @@ const timetable={
  5:[["國文8B",1,"08:15","09:00"],["數學9A",2,"09:10","09:55"],["國文8A",3,"10:05","10:50"]]
 };
 const $=id=>document.getElementById(id);
-let db={},baseDb={},busy=false,selected=null,timer=null;
+let db={},baseDb={},busy=false,selected=null,timer=null,finalizing=false,loaded=false;
 const todayISO=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")};
 const dateInput=$("date");dateInput.value=todayISO();
 function parseTime(s){const [h,m]=s.split(":").map(Number);return h*60+m}
 function getLessons(date){const d=new Date(date+"T12:00:00");return timetable[d.getDay()]||[]}
 function lessonId(x){return x.group+"-P"+x.period}
-function currentLessonIndex(list){const now=new Date(),m=now.getHours()*60+now.getMinutes();let i=list.findIndex(x=>m>=parseTime(x.start)&&m<=parseTime(x.end));if(i>=0)return i;return Math.max(0,list.findIndex(x=>m<parseTime(x.start)))}
+function atTime(date,time){return new Date(date+"T"+time+":00")}\nfunction currentLessonIndex(list){const now=new Date();let i=list.findIndex(x=>now>=atTime(dateInput.value,x.start)&&now<=atTime(dateInput.value,x.end));if(i>=0)return i;const next=list.findIndex(x=>now<atTime(dateInput.value,x.start));return next>=0?next:Math.max(0,list.length-1)}
 function buildLessonOptions(){const list=getLessons(dateInput.value);const sel=$("lesson");sel.innerHTML="";list.forEach((a,i)=>{const o=document.createElement("option");o.value=String(i);o.textContent="第"+a.period+"節｜"+(a.label||a.group)+"（"+a.start+"–"+a.end+"）";sel.appendChild(o)});if(!list.length){const o=document.createElement("option");o.textContent="今天沒有排定的課程";o.value="";sel.appendChild(o);sel.disabled=true;selected=null;renderRoster();return}sel.disabled=false;sel.value=String(currentLessonIndex(list));chooseLesson()}
-function chooseLesson(){const list=getLessons(dateInput.value);selected=list[Number($("lesson").value)]||null;renderRoster()}
-function sessionStatus(x,entry){if(entry)return entry.status;const now=new Date(),m=now.getHours()*60+now.getMinutes();if(dateInput.value<todayISO()|| (dateInput.value===todayISO()&&m>parseTime(x.end)))return "未到";return "未簽到"}
+function chooseLesson(){const list=getLessons(dateInput.value);selected=list[Number($("lesson").value)]||null;renderRoster();if(loaded)finalizeEndedLesson()}
+function sessionStatus(x,entry){if(entry)return entry.status;const now=new Date();if(dateInput.value<todayISO()||(dateInput.value===todayISO()&&now>atTime(dateInput.value,x.end)))return "未到";return "未簽到"}
 function showStatus(msg,kind=""){const el=$("status");el.textContent=msg;el.className="status "+kind}
 async function readLatest(){const r=await fetch(API,{cache:"no-store"});if(!r.ok)throw Error("讀取試算表失敗");const d=await r.json();if(!d||typeof d!=="object"||Array.isArray(d)||d.status==="error")throw Error(d?.message||"資料格式錯誤");return d}
 function ensureRecords(data,x,date){if(!data[date])data[date]={};if(!Array.isArray(data[date][x.group]))data[date][x.group]=(groups[x.group]||[]).map(name=>({id:name+"_"+Math.random().toString(36).slice(2,6),name,bonusScore:0,attendance:"未標記",isDuty:false,warnCount:0}));return data[date][x.group]}
@@ -84,7 +84,7 @@ async function signIn(name){
   const rec=records.find(x=>x.name===name);if(!rec)throw Error("找不到學生資料，請聯絡老師");
   rec.lessonAttendance=rec.lessonAttendance&&typeof rec.lessonAttendance==="object"?rec.lessonAttendance:{};
   if(rec.lessonAttendance[id])throw Error("這堂課已經簽到，不能重複領取積分");
-  const onTime=minutes<=parseTime(lesson.start)+5;
+  const onTime=now.getTime()<=startAt.getTime()+5*60*1000;
   const entry={sessionId:id,period:lesson.period,course:lesson.label||group,status:onTime?"準時":"遲到",time,date};
   rec.lessonAttendance[id]=entry;
   await saveGroup(date,group,records);
@@ -115,7 +115,7 @@ function renderRoster(){
 function tick(){const now=new Date();$("clock").textContent=now.toLocaleTimeString("zh-TW",{hour12:false});if(selected&&dateInput.value===todayISO())renderRoster()}
 $("lesson").addEventListener("change",chooseLesson);
 dateInput.addEventListener("change",()=>{buildLessonOptions();load()});
-async function load(){showStatus("正在讀取學生名單與積分……");try{db=await readLatest();baseDb=JSON.parse(JSON.stringify(db));showStatus("✅ 已連線；準時簽到每堂課 +2 分。","ok");renderRoster()}catch(e){showStatus("⚠️ 無法讀取最新資料，暫停簽到："+e.message,"error")}}
+async function finalizeEndedLesson(){if(finalizing||!selected||dateInput.value!==todayISO()||new Date()<=atTime(dateInput.value,selected.end))return;const date=dateInput.value,lesson=selected,group=lesson.group,id=lessonId(lesson);const records=ensureRecords(db,lesson,date);const missing=records.filter(x=>!x.lessonAttendance||!x.lessonAttendance[id]);if(!missing.length)return;finalizing=true;try{missing.forEach(rec=>{rec.lessonAttendance=rec.lessonAttendance&&typeof rec.lessonAttendance==="object"?rec.lessonAttendance:{};rec.lessonAttendance[id]={sessionId:id,period:lesson.period,course:lesson.label||group,status:"未到",time:"",date}});await saveGroup(date,group,records);let verified=false;for(let i=0;i<8;i++){await new Promise(r=>setTimeout(r,500));const latest=await readLatest();const all=(groups[group]||[]).every(name=>latest[date]?.[group]?.find(x=>x.name===name)?.lessonAttendance?.[id]);if(all){db=latest;baseDb=JSON.parse(JSON.stringify(latest));verified=true;break}}if(!verified)throw Error("未到狀態尚未完成核對");renderRoster();showStatus("本節課已結束，未簽到學生已登記為「未到」。","warn")}catch(e){showStatus("未到紀錄同步未能確認："+e.message,"error")}finally{finalizing=false}}\nasync function load(){showStatus("正在讀取學生名單與積分……");try{db=await readLatest();baseDb=JSON.parse(JSON.stringify(db));loaded=true;showStatus("✅ 已連線；準時簽到每堂課 +2 分。","ok");renderRoster();await finalizeEndedLesson()}catch(e){showStatus("⚠️ 無法讀取最新資料，暫停簽到："+e.message,"error")}}
 buildLessonOptions();load();tick();timer=setInterval(tick,1000);
 </script>
 </body></html>
