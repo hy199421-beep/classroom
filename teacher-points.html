@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>學習島｜教師積分中心</title>
+<style>
+:root{--blue:#3978b9;--ink:#29445d;--green:#218653;--gold:#e6bd68}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:24px 14px 42px;font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;color:var(--ink);background:linear-gradient(180deg,#eaf6ff,#f8fbff 55%,#fffaf0)}
+.wrap{max-width:850px;margin:auto}
+header{text-align:center;margin:8px 0 22px}
+.logo{font-size:42px}h1{font-size:clamp(26px,5vw,35px);margin:6px 0}.sub{font-size:14px;color:#71869a}
+.panel{background:#fff;border:1px solid #d7e7f4;border-radius:22px;padding:20px;box-shadow:0 10px 28px #36648c12;margin-bottom:14px}
+h2{font-size:17px;margin:0 0 12px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+select,input{font:inherit;border:1px solid #cbddea;border-radius:11px;padding:10px 12px;background:#fff;color:var(--ink)}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:20px}
+.tab{border:1px solid #c9dceb;border-radius:13px;background:#f5f9fc;color:#46627b;padding:13px 8px;font-weight:800;font-size:16px;cursor:pointer}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.hint{font-size:13px;color:#71869a;margin:-4px 0 14px}
+.students{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.student{border:1.5px solid #d4e4ef;border-radius:16px;background:#fff;color:var(--ink);padding:14px 15px;min-height:78px;display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;cursor:pointer}
+.student:hover{border-color:#83b4dc}.student:disabled{opacity:.65;cursor:wait}
+.name{font-size:19px;font-weight:850}.plus{font-size:21px;color:var(--green);font-weight:900;margin-right:5px}
+.detail{text-align:right;font-size:12px;color:#71869a;line-height:1.7}.detail strong{color:var(--green);font-size:14px}
+.status{display:none;margin-top:16px;padding:12px 14px;border-radius:12px;background:#eaf8ef;color:#216b43;font-weight:750;text-align:center}
+.status.show{display:block}.status.error{background:#fff0ed;color:#a33c32}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px 8px;border-bottom:1px solid #edf1f4;text-align:center}th{color:#6c8194;background:#f7fafc}td:first-child,th:first-child{text-align:left}
+.foot{text-align:center;color:#8293a2;font-size:12px;line-height:1.7;margin-top:12px}
+@media(max-width:520px){body{padding:16px 10px 30px}.panel{padding:15px;border-radius:18px}.tabs{gap:6px}.tab{font-size:14px;padding:12px 3px}.students{gap:8px}.student{padding:12px 10px;min-height:72px}.name{font-size:17px}.detail{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div class="logo">🏝️</div><h1>學習島積分中心</h1><div class="sub">教師專用｜點選學生姓名，自動加 1 分</div></header>
+<main class="panel">
+<h2>① 選擇日期與課程節次</h2>
+<div class="controls">
+<input id="date" type="date" aria-label="課程日期">
+<select id="period" aria-label="課程節次">
+<option value="1">第 1 節</option><option value="2">第 2 節</option><option value="3">第 3 節</option><option value="4">第 4 節</option>
+<option value="5">第 5 節</option><option value="6">第 6 節</option><option value="7">第 7 節</option><option value="8">第 8 節</option>
+</select>
+</div>
+<h2>② 選擇班級</h2>
+<div class="tabs" role="tablist">
+<button class="tab active" data-group="數學9A" aria-selected="true">數學9A</button>
+<button class="tab" data-group="國文8A" aria-selected="false">國文8A</button>
+<button class="tab" data-group="國文8B" aria-selected="false">國文8B</button>
+</div>
+<h2>③ 點選學生姓名，自動加 1 分</h2>
+<p class="hint">每點一次加 1 分；不提供扣分。成功寫入試算表並核對後才會顯示成功。</p>
+<div class="students" id="students"></div>
+<div class="status" id="status" role="status" aria-live="polite"></div>
+</main>
+<section class="panel">
+<h2>本堂課積分整理</h2>
+<p class="hint">依目前選擇的日期、班級與節次，顯示準時簽到分及老師課堂加分。</p>
+<div style="overflow-x:auto"><table><thead><tr><th>學生</th><th>簽到</th><th>課堂加分</th><th>本堂合計</th><th>累積總分</th></tr></thead><tbody id="summary"><tr><td colspan="5">讀取資料中…</td></tr></tbody></table></div>
+</section>
+<p class="foot">此頁使用共用積分資料。舊有積分、每堂簽到與商店兌換紀錄均保留。<br>若顯示 API 尚未更新，請先將 AppsScript-Code-v3.gs 部署至原 Google Apps Script 專案。</p>
+</div>
+<script>
+const API="https://script.google.com/macros/s/AKfycby4hyOeWPXPvbqPCgr-xcuzR_nRw3K0z2Ao17sz7EsaWRbVbF3Dephdl-4r7EdT-Sva/exec";
+const groups={
+ "數學9A":["慶豐","詠甯","祺叡","冠閔","鴻昱","聖民","柏曜"],
+ "國文8A":["淮喆","鼎杰","佳瑋","子田","司浩"],
+ "國文8B":["昱佑","奕訢","日良","羽琪","世賢","宣澔"]
+};
+const $=id=>document.getElementById(id);
+const dateNow=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")};
+$("date").value=dateNow();
+let group="數學9A",db={},busy=false;
+const sessionId=()=>group+"-P"+$("period").value;
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+function showStatus(msg,error=false){$("status").textContent=msg;$("status").className="status show"+(error?" error":"")}
+async function readDb(){
+ const r=await fetch(API,{cache:"no-store"});if(!r.ok)throw Error("讀取試算表失敗");
+ const d=await r.json();if(!d||typeof d!=="object"||Array.isArray(d)||d.status==="error")throw Error(d?.message||"資料格式錯誤");
+ if(d.__apiVersion!==2)throw Error("目前 Apps Script 尚未安裝教師加分功能，請先部署 AppsScript-Code-v3.gs。");
+ return d;
+}
+function recFor(date,name){return db[date]?.[group]?.find(x=>x&&x.name===name)||null}
+function dailyScore(rec){
+ if(!rec)return 0;
+ const legacy=Number(rec.bonusScore)||0;
+ const attendance=rec.attendance==="準時"?2:0;
+ const lessons=rec.lessonAttendance&&typeof rec.lessonAttendance==="object"?Object.values(rec.lessonAttendance).filter(x=>x&&x.status==="準時").length*2:0;
+ return legacy+attendance+lessons;
+}
+function totalScore(name){
+ let total=0;
+ Object.keys(db).forEach(date=>{if(date.startsWith("__"))return;total+=dailyScore(db[date]?.[group]?.find(x=>x&&x.name===name))});
+ const spent=Array.isArray(db.__shopRedemptions)?db.__shopRedemptions.filter(x=>x&&x.group===group&&x.name===name).reduce((n,x)=>n+(Number(x.cost)||0),0):0;
+ return total-spent;
+}
+function render(){
+ const date=$("date").value,sid=sessionId();$("students").innerHTML="";
+ groups[group].forEach(name=>{
+  const rec=recFor(date,name),events=Array.isArray(rec?.classPointEvents)?rec.classPointEvents:[];
+  const earned=events.filter(x=>x&&x.sessionId===sid).reduce((n,x)=>n+(Number(x.points)||0),0);
+  const b=document.createElement("button");b.className="student";b.disabled=busy;
+  const n=document.createElement("span");n.className="name";n.textContent=name;
+  const d=document.createElement("span");d.className="detail";
+  const plus=document.createElement("span");plus.className="plus";plus.textContent="＋";
+  const info=document.createElement("span");info.innerHTML="本堂 <strong>"+earned+" 分</strong><br>累積 "+totalScore(name)+" 分";
+  d.append(plus,info);b.append(n,d);b.addEventListener("click",()=>addPoint(name));$("students").appendChild(b);
+ });
+ renderSummary();
+}
+function renderSummary(){
+ const date=$("date").value,sid=sessionId(),body=$("summary");body.innerHTML="";
+ groups[group].forEach(name=>{
+  const rec=recFor(date,name),entry=rec?.lessonAttendance?.[sid];
+  const checkin=entry?.status==="準時"?2:0;
+  const events=Array.isArray(rec?.classPointEvents)?rec.classPointEvents:[];
+  const classPoints=events.filter(x=>x&&x.sessionId===sid).reduce((n,x)=>n+(Number(x.points)||0),0);
+  const tr=document.createElement("tr");
+  [name,checkin+" 分",classPoints+" 分",(checkin+classPoints)+" 分",totalScore(name)+" 分"].forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.appendChild(td)});
+  body.appendChild(tr);
+ });
+}
+async function addPoint(name){
+ if(busy)return;
+ const date=$("date").value,period=$("period").value,sid=sessionId();
+ const eventId="tp_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,12);
+ busy=true;render();showStatus("正在寫入並核對 "+name+" 的 +1 分…");
+ try{
+  const latest=await readDb();
+  const payload={action:"addClassPoint",date,group,name,sessionId:sid,eventId};
+  await fetch(API,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(payload)});
+  let confirmed=null;
+  for(let i=0;i<8;i++){
+   await wait(600);
+   const check=await readDb();
+   const rec=check[date]?.[group]?.find(x=>x&&x.name===name);
+   if(Array.isArray(rec?.classPointEvents)&&rec.classPointEvents.some(x=>x&&x.id===eventId)){confirmed=check;break}
+  }
+  if(!confirmed)throw Error("尚未在試算表確認這筆加分。請重新載入核對，不要連續重複點擊。");
+  db=confirmed;showStatus("✓ "+name+" 已成功加 1 分，資料已同步。");render();
+ }catch(e){try{db=await readDb()}catch(ignore){}showStatus("加分未能確認："+(e.message||"同步失敗")+"。請先重新整理核對。",true);render()}
+ finally{busy=false;render()}
+}
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{group=t.dataset.group;document.querySelectorAll(".tab").forEach(x=>{const a=x===t;x.classList.toggle("active",a);x.setAttribute("aria-selected",String(a))});render()}));
+$("date").addEventListener("change",render);$("period").addEventListener("change",render);
+async function load(){showStatus("正在讀取共用積分資料…");try{db=await readDb();render();$("status").classList.remove("show")}catch(e){showStatus(e.message,true);$("students").innerHTML="";$("summary").innerHTML='<tr><td colspan="5">尚未連線，請先完成 Apps Script 部署。</td></tr>'}}
+load();
+</script>
+</body></html>
