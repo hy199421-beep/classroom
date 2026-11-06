@@ -37,7 +37,10 @@ function jsonOutput_(payload) {
 
 function doGet() {
   try {
-    return jsonOutput_(readDatabase_());
+    const db = readDatabase_();
+    // 回傳版本標記供前端確認 API 已升級；此欄位不寫入試算表。
+    db.__apiVersion = 2;
+    return jsonOutput_(db);
   } catch (err) {
     return jsonOutput_({ status: 'error', message: String(err && err.message || err) });
   }
