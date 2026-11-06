@@ -68,7 +68,7 @@ function buildLessonOptions(){const list=getLessons(dateInput.value);const sel=$
 function chooseLesson(){const list=getLessons(dateInput.value);selected=list[Number($("lesson").value)]||null;renderRoster();if(loaded)finalizeEndedLesson()}
 function sessionStatus(x,entry){if(entry)return entry.status;const now=new Date();if(dateInput.value<todayISO()||(dateInput.value===todayISO()&&now>atTime(dateInput.value,x.end)))return "未到";return "未簽到"}
 function showStatus(msg,kind=""){const el=$("status");el.textContent=msg;el.className="status "+kind}
-async function readLatest(){const r=await fetch(API,{cache:"no-store"});if(!r.ok)throw Error("讀取試算表失敗");const d=await r.json();if(!d||typeof d!=="object"||Array.isArray(d)||d.status==="error")throw Error(d?.message||"資料格式錯誤");return d}
+async function readLatest(){const r=await fetch(API,{cache:"no-store"});if(!r.ok)throw Error("讀取試算表失敗");const d=await r.json();if(!d||typeof d!=="object"||Array.isArray(d)||d.status==="error")throw Error(d?.message||"資料格式錯誤");if(d.__apiVersion!==2)throw Error("積分 API 尚未升級。為保護歷史積分及商店紀錄，已暫停簽到；請先更新並重新部署 Apps Script。");return d}
 function ensureRecords(data,x,date){if(!data[date])data[date]={};if(!Array.isArray(data[date][x.group]))data[date][x.group]=(groups[x.group]||[]).map(name=>({id:name+"_"+Math.random().toString(36).slice(2,6),name,bonusScore:0,attendance:"未標記",isDuty:false,warnCount:0}));return data[date][x.group]}
 async function saveGroup(date,group,records){await fetch(API,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({action:"saveGroup",date,group,records})})}
 async function signIn(name){
