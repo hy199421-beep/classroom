@@ -540,7 +540,7 @@
                 card.innerHTML = `
                     <div class="flex items-center gap-1.5 justify-between w-full sm:w-auto">
                         <div class="flex items-center gap-1">
-                            <span class="font-bold text-slate-800 text-xs whitespace-nowrap">${s.name}</span>
+                            <button type="button" onclick="addBonus(${index}, 1)" aria-label="為 ${s.name} 加 1 分" class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-sm sm:text-base px-4 py-2 rounded-xl shadow-sm border border-indigo-700 transition touch-active whitespace-nowrap">${s.name} <span class="text-indigo-100 text-xs font-bold ml-1">＋1</span></button>
                             ${lessonEntries.length ? `<span class="bg-cyan-100 text-cyan-700 text-[10px] px-1 rounded border border-cyan-200">課堂簽到 準時 ${lessonOnTime}／遲到 ${lessonLate}／未到 ${lessonAbsent}</span>` : ''}
                             ${s.isDuty ? '<span class="bg-rose-100 text-rose-600 text-[10px] px-1 rounded border border-rose-200">值日生</span>' : ''}
                             ${(s.warnCount || 0) > 0 ? `<span class="bg-amber-100 text-amber-700 text-[10px] px-1 rounded border border-amber-200">⚠️x${s.warnCount}</span>` : ''}
@@ -554,14 +554,8 @@
                     </div>
 
                     <div class="flex items-center gap-1 justify-end">
-                        <button onclick="addBonus(${index}, 1)" class="compact-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-0.5 rounded text-xs transition touch-active">
-                            +1
-                        </button>
-                        <button onclick="addBonus(${index}, 2)" class="compact-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded text-xs transition touch-active">
-                            +2
-                        </button>
-                        <button onclick="addBonus(${index}, -1)" title="扣 1 分" class="compact-btn bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-600 font-bold px-1.5 py-0.5 rounded text-xs transition touch-active">
-                            -1
+                        <button onclick="addBonus(${index}, 2)" class="compact-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition touch-active" title="額外加 2 分">
+                            額外 +2
                         </button>
                         <button onclick="setAttendance(${index}, '準時')" class="compact-btn border text-xs px-2 py-0.5 rounded font-bold transition touch-active ${s.attendance === '準時' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-300 hover:bg-emerald-50'}">
                             準時
