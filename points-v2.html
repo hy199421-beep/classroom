@@ -57,6 +57,7 @@
                 </div>
 
                 <a href="https://hy199421-beep.github.io/learning-island/shop.html" target="_blank" rel="noopener noreferrer" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-1 rounded-lg transition shadow font-bold">🎁 歡樂積分商店</a>
+                <a href="https://hy199421-beep.github.io/classroom/checkin.html" class="bg-cyan-500 hover:bg-cyan-600 text-white text-xs px-3 py-1 rounded-lg transition shadow font-bold">⏰ 智慧簽到</a>
                 <button onclick="fetchDataFromSheets()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1 rounded-lg transition shadow flex items-center gap-1 touch-active font-bold">
                     <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> 重新載入
                 </button>
@@ -449,8 +450,12 @@
         }
 
         function calculateDailyScore(student) {
-            let attendanceScore = (student.attendance === '準時') ? 2 : 0;
-            return student.bonusScore + attendanceScore;
+            // 舊制每日點名積分照常保留；新增每節課簽到，每堂準時另加 2 分。
+            const legacyAttendanceScore = (student.attendance === '準時') ? 2 : 0;
+            const lessonAttendance = student.lessonAttendance && typeof student.lessonAttendance === 'object'
+                ? Object.values(student.lessonAttendance) : [];
+            const lessonScore = lessonAttendance.filter(x => x && x.status === '準時').length * 2;
+            return (Number(student.bonusScore) || 0) + legacyAttendanceScore + lessonScore;
         }
 
         function calculateCumulativeScore(studentName, group) {
